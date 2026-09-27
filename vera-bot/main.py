@@ -23,6 +23,19 @@ app.add_middleware(
 app.include_router(router)
 
 
+@app.get("/")
+async def root():
+    return {
+        "status": "online",
+        "service": "MagicPin Vera AI Bot",
+        "endpoints": {
+            "health": "/v1/healthz",
+            "metadata": "/v1/metadata",
+            "documentation": "/docs"
+        }
+    }
+
+
 # Global exception handler to prevent unhandled crashes
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):

@@ -26,6 +26,7 @@ VALID_SCOPES = {"category", "merchant", "customer", "trigger"}
 
 
 @router.get("/healthz", response_model=HealthzResponse)
+@router.get("/health", response_model=HealthzResponse)
 async def healthz():
     try:
         uptime = int(time.time() - START_TIME)

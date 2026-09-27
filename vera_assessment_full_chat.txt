@@ -1,0 +1,2721 @@
+USER:
+[7 images attached]
+
+give all this explain me how this oneline assesment works
+
+ASSISTANT:
+Yes — this is **not a normal MCQ/coding Online Assessment**. It is essentially a **backend + AI decision-making challenge** where you build a small API service that behaves like the messaging engine behind an AI assistant called **Vera**.
+
+The easiest way to understand it is:
+
+> **They give your bot business/customer data → their judge sends that data to your API → your system decides what message Vera should send → their AI judge evaluates the quality of your decision/message.**
+
+---
+
+# 1. What exactly are you building?
+
+You are building the **message engine behind Vera**.
+
+Vera is described as magicpin's AI assistant for merchants. It helps merchants with things like:
+
+- improving listings
+- running campaigns
+- responding to customers
+- deciding what message to send next
+
+Your job is **not to build a complete chatbot UI**.
+
+You mainly build a **backend API** that takes structured context and produces a good message.
+
+Conceptually:
+
+```text
+Merchant Data
+     ↓
+Your API
+     ↓
+Decision Engine
+     ↓
+Message + CTA + Identity + Suppression + Reason
+```
+
+For example:
+
+```text
+Merchant:
+Dental clinic
+
+Performance:
+190 people searching for "Dental Check Up"
+
+Offer:
+Check-up at ₹2999
+
+Trigger:
+High local search demand
+```
+
+Your engine might decide:
+
+```text
+message:
+"190 people in your locality are searching for
+'Dental Check Up'. Should I send them your
+check-up offer at ₹2999?"
+
+CTA:
+"Send offer"
+
+identity:
+"Vera"
+
+suppression_key:
+"dental_search_2999"
+
+rationale:
+"High local demand + active offer makes this
+the most relevant action right now."
+```
+
+The exact required output structure will come from the challenge package/API specification.
+
+---
+
+# 2. The biggest idea: this is a **decision engine**, not simply a text generator
+
+This is extremely important.
+
+The screenshot explicitly says:
+
+> "Our AI scores decisions, not just writing style."
+
+So don't approach it like:
+
+```text
+Input → LLM → generate nice marketing sentence
+```
+
+Instead:
+
+```text
+Input
+ ↓
+Understand context
+ ↓
+Choose the MOST important signal
+ ↓
+Choose action/message
+ ↓
+Generate concise message
+```
+
+They want your system to answer:
+
+> **"Given everything happening right now, what should Vera say next?"**
+
+That is the core challenge.
+
+---
+
+# 3. The 4 inputs
+
+Your main function is described as:
+
+```python
+compose(category, merchant, trigger, customer?)
+```
+
+There are 4 pieces of context.
+
+## 01. Category
+
+This tells you **what type of business** you're dealing with.
+
+The dataset contains 5 categories:
+
+```text
+Dentists
+Salons
+Restaurants
+Gyms
+Pharmacies
+```
+
+Why does this matter?
+
+Because the language and useful actions should change.
+
+For example:
+
+### Dentist
+
+```text
+"190 people nearby searched for Dental Check Up.
+Want me to promote your ₹2999 check-up?"
+```
+
+### Restaurant
+
+Maybe:
+
+```text
+"Your dinner bookings are down 18% this week.
+Want to push the ₹499 family combo tonight?"
+```
+
+The system should understand the category instead of sending generic marketing copy.
+
+---
+
+# 4. Merchant
+
+Merchant context contains information about the actual business.
+
+The screenshot says merchant data can include:
+
+- business identity
+- performance signals
+- live offers
+- conversation history
+
+For example:
+
+```json
+{
+  "name": "Smile Dental",
+  "location": "Faridabad",
+  "offers": [
+    {
+      "name": "Dental Check-up",
+      "price": 2999
+    }
+  ],
+  "performance": {
+    "searches": 190,
+    "conversion_rate": 4.2
+  }
+}
+```
+
+Your system needs to use those **actual numbers and facts**.
+
+This is important because the rubric has:
+
+### Specificity
+
+They want:
+
+```text
+190 people searched...
+```
+
+rather than:
+
+```text
+Lots of people are searching...
+```
+
+Don't invent data.
+
+---
+
+# 5. Trigger
+
+This is probably the **most important input**.
+
+The trigger answers:
+
+> **Why should Vera send a message NOW?**
+
+The screenshot gives examples:
+
+```text
+recall
+spike
+dip
+research
+festival
+```
+
+Think of triggers as events.
+
+Example:
+
+```text
+sales dropped 20%
+```
+
+might trigger:
+
+```text
+dip
+```
+
+Or:
+
+```text
+search volume suddenly increased
+```
+
+might trigger:
+
+```text
+spike
+```
+
+Or:
+
+```text
+Diwali is approaching
+```
+
+might trigger:
+
+```text
+festival
+```
+
+Your engine needs to determine:
+
+> What current event deserves the merchant's attention?
+
+---
+
+# 6. Customer is optional
+
+Customer context is only needed for certain messages.
+
+It can contain:
+
+- relationship
+- consent
+- status
+- preference
+
+For example:
+
+```text
+Customer:
+Rahul
+
+Relationship:
+Existing customer
+
+Preference:
+Vegetarian
+
+Status:
+Hasn't visited in 60 days
+
+Consent:
+Marketing allowed
+```
+
+Now Vera can produce a direct outreach message.
+
+But **customer isn't always required**.
+
+That's why the function shows:
+
+```text
+customer?
+```
+
+The `?` basically indicates optional context.
+
+---
+
+# 7. The most important scoring criteria
+
+Their judge scores your output across **5 dimensions**.
+
+Each one is:
+
+```text
+0–10
+```
+
+## 1. Decision Quality
+
+This asks:
+
+> Did you choose the correct thing to talk about?
+
+Suppose the input contains:
+
+```text
+Revenue ↓ 5%
+Searches ↑ 75%
+Offer expires tomorrow
+Festival starts tomorrow
+```
+
+Your system shouldn't dump all four into one message.
+
+It should determine which signal is most important **right now**.
+
+The screenshot says:
+
+> "Strong bots do not repeat every available fact. They choose the one signal that should drive the next message."
+
+So:
+
+```text
+GOOD
+"Searches for your dental check-up are up 75%.
+Want me to promote the ₹2999 offer?"
+```
+
+instead of:
+
+```text
+BAD
+"Your sales are down, searches are up, your offer
+expires tomorrow, and Diwali is coming..."
+```
+
+---
+
+# 8. Specificity
+
+This measures how much you use **real information from the input**.
+
+Bad:
+
+```text
+"Customers are interested in your services."
+```
+
+Good:
+
+```text
+"190 people nearby searched for Dental Check Up."
+```
+
+Best approach:
+
+```text
+Real number
++
+Real offer
++
+Real timing
++
+Relevant action
+```
+
+Don't invent data.
+
+For example, if the input never says:
+
+```text
+"Conversion increased 34%"
+```
+
+you must **not** write that.
+
+The screenshot explicitly says:
+
+> "Bold does not mean hype. It means a sharp hook from real context, without invented claims."
+
+---
+
+# 9. Category Fit
+
+The message needs to sound appropriate for the business.
+
+For example, the style for:
+
+```text
+Dentist
+```
+
+should not necessarily be identical to:
+
+```text
+Restaurant
+```
+
+The category determines:
+
+- tone
+- offer patterns
+- seasonal moments
+- things to avoid
+
+So you could have category-specific rules.
+
+For example:
+
+```text
+Dentist:
+health/service oriented
+
+Restaurant:
+food / booking / promotion oriented
+
+Gym:
+membership / attendance / classes oriented
+
+Salon:
+appointments / services / offers
+
+Pharmacy:
+availability / repeat purchase / relevant products
+```
+
+These are conceptual examples; the actual category rules should come from the provided dataset/package.
+
+---
+
+# 10. Merchant Fit
+
+This means:
+
+> Does the message actually fit THIS merchant?
+
+Suppose two dentists exist.
+
+### Dentist A
+
+```text
+Searches: 190
+Offer: ₹2999 check-up
+```
+
+### Dentist B
+
+```text
+Searches: 40
+Offer: ₹1499 cleaning
+```
+
+You shouldn't produce the same message for both.
+
+Your output should reflect:
+
+- merchant metrics
+- offers
+- catalog
+- previous conversations
+- business identity
+
+---
+
+# 11. Engagement / "compulsion"
+
+This one is slightly different.
+
+They're not simply asking:
+
+> "Is the message interesting?"
+
+They're asking:
+
+> **"Is the merchant likely to actually reply?"**
+
+The screenshot says:
+
+> "Give one strong reason to reply now with a low-effort next action."
+
+So:
+
+### Weak
+
+```text
+"Would you like to improve your marketing strategy?"
+```
+
+The merchant doesn't know what to do.
+
+### Better
+
+```text
+"190 people nearby searched for Dental Check Up.
+Should I promote your ₹2999 offer?"
+```
+
+There is one obvious response:
+
+```text
+Yes
+```
+
+or
+
+```text
+No
+```
+
+That's what they mean by **low-friction CTA**.
+
+---
+
+# 12. Why the "Generic" example scores badly
+
+Their screenshot deliberately compares two messages.
+
+### Generic
+
+```text
+Hi Doctor, want to run a discount campaign today
+to increase sales?
+```
+
+Problems:
+
+```text
+No trigger
+No merchant fact
+No category voice
+No concrete offer
+No specific reason to act now
+```
+
+So it sounds like something that could be sent to **any business**.
+
+---
+
+### High-compulsion
+
+```text
+190 people in your locality are searching for
+"Dental Check Up". Should I send them a
+discounted check up at ₹2999?
+```
+
+This uses:
+
+```text
+190
+↓
+specific search term
+↓
+locality
+↓
+actual offer
+↓
+price
+↓
+one clear CTA
+```
+
+That is exactly the style the judge is looking for.
+
+---
+
+# 13. What is the dataset?
+
+Everyone starts from the **same dataset**.
+
+The package contains seed data and a deterministic generator.
+
+The screenshot says it expands to:
+
+```text
+50 merchants
+200 customers
+100 triggers
+30 canonical test pairs
+```
+
+And there are:
+
+```text
+5 categories
+```
+
+The important part is that **all teams get the same base data**.
+
+So they can fairly compare implementations.
+
+---
+
+# 14. What does "30 canonical test pairs" mean?
+
+Think of them as standardized test cases.
+
+Something like:
+
+```text
+Input #1
+Category = Dentist
+Merchant = ...
+Trigger = ...
+Customer = ...
+```
+
+Expected system behavior gets evaluated.
+
+There are apparently **30 canonical pairs** used by the judging system.
+
+There are also:
+
+```text
+10 case studies
+```
+
+in the examples section, with inputs, outputs and scorecards.
+
+Those examples are extremely useful because they show what strong behavior looks like.
+
+---
+
+# 15. What does "deterministic dataset" mean?
+
+They provide:
+
+```bash
+python3 dataset/generate_dataset.py --seed-dir dataset --out expanded
+```
+
+This expands the seed data into the full dataset.
+
+Because generation is deterministic:
+
+```text
+same seed
++
+same generator
+=
+same dataset
+```
+
+So you don't have to invent your own testing data.
+
+---
+
+# 16. Now the important part: their API testing
+
+Your application needs a **public URL**.
+
+Something like:
+
+```text
+https://your-bot.example.com
+```
+
+They will call your server.
+
+The screenshot lists:
+
+```text
+POST /v1/context
+POST /v1/tick
+POST /v1/reply
+
+GET /v1/health
+GET /v1/metadata
+```
+
+So your backend needs to implement these required endpoints according to the challenge contract.
+
+---
+
+# 17. `/health`
+
+This is basically:
+
+> "Is your server alive?"
+
+They can call:
+
+```http
+GET /v1/health
+```
+
+Your server should respond appropriately according to the package specification.
+
+Think:
+
+```text
+Judge
+ ↓
+Are you alive?
+ ↓
+Your server
+ ↓
+Yes
+```
+
+---
+
+# 18. `/metadata`
+
+This allows the judge to ask your bot for information about your implementation.
+
+Again, the exact response schema should come from the starter package.
+
+Conceptually:
+
+```text
+GET /v1/metadata
+```
+
+→ information about your bot/version/capabilities.
+
+---
+
+# 19. `/context` is very important
+
+This is where the judge gives your bot **merchant context**.
+
+The screenshot shows:
+
+```http
+POST /v1/context
+```
+
+with information like:
+
+```json
+{
+  "scope": "merchant",
+  "context_id": "m_001_acme...",
+  "version": 3,
+  "payload": {
+      "identity": {...},
+      "performance": {...},
+      "offers": [...]
+  },
+  "delivered_at": "2026-04-29T10:00:00Z"
+}
+```
+
+Your application needs to **store this context**.
+
+This is why they say your bot should remain:
+
+> stateful
+
+---
+
+# 20. What does versioning mean?
+
+Suppose the judge sends:
+
+```text
+Merchant A
+version = 3
+```
+
+You store it.
+
+Then they send exactly the same version again:
+
+```text
+version = 3
+```
+
+The screenshot says:
+
+> "Re-posting the same version is a no-op."
+
+Meaning:
+
+```text
+version 3
+↓
+already have version 3
+↓
+don't unnecessarily replace it
+```
+
+Then:
+
+```text
+version 4
+```
+
+comes in.
+
+Now:
+
+```text
+version 4 > version 3
+```
+
+so your system should replace/update the context.
+
+This gives you a very important backend requirement:
+
+```text
+context must be persisted by merchant/context ID
+and version
+```
+
+---
+
+# 21. `/tick`
+
+This likely represents the system moving forward through the simulated timeline.
+
+The judge may introduce new information/events and then ask your system to react.
+
+The exact behavior should be taken from `challenge-testing-brief.md` / API documentation inside the package.
+
+Conceptually:
+
+```text
+Current state
+     ↓
+New event happens
+     ↓
+tick
+     ↓
+Your system updates its decision state
+```
+
+---
+
+# 22. `/reply`
+
+This is where the conversation simulation becomes important.
+
+The judge can simulate the merchant/customer responding.
+
+For example:
+
+```text
+Vera:
+"190 people nearby searched for Dental Check Up.
+Should I promote your ₹2999 offer?"
+
+Merchant:
+"Yes"
+```
+
+Then the judge can send another reply/context.
+
+Your system should remain aware of the conversation.
+
+That's why the challenge talks about:
+
+```text
+replies
+objections
+auto-replies
+intent handoffs
+```
+
+A strong system should not treat every request as a completely new conversation.
+
+---
+
+# 23. The entire evaluation flow
+
+This is probably the most useful mental model.
+
+Imagine the judge doing this:
+
+```text
+               THEIR JUDGE
+                   |
+                   |
+            POST /v1/context
+                   |
+                   ↓
+          ┌──────────────────┐
+          │    YOUR SERVER   │
+          │                  │
+          │ Store context    │
+          │                  │
+          └────────┬─────────┘
+                   |
+                   ↓
+              POST /v1/tick
+                   |
+                   ↓
+          Your decision engine
+                   |
+                   ↓
+              POST /v1/reply
+                   |
+                   ↓
+              Your message
+                   |
+                   ↓
+            AI JUDGE SCORES
+                   |
+       ┌───────────┼───────────┐
+       ↓           ↓           ↓
+ Decision      Specificity   Category
+ Quality                       Fit
+       ↓           ↓           ↓
+ Merchant Fit   Engagement
+```
+
+So **your API is the thing being evaluated**.
+
+---
+
+# 24. Why does it say "LLM-powered judge"?
+
+Because the evaluation isn't necessarily just:
+
+```text
+expected string == your string
+```
+
+Instead, their judge uses an LLM to evaluate qualities such as:
+
+```text
+Was the decision relevant?
+Was it grounded?
+Was it specific?
+Was it category appropriate?
+Would the merchant reply?
+```
+
+That's why two completely different messages could potentially both score well.
+
+For example:
+
+```text
+"190 people are searching for Dental Check Up.
+Should I promote ₹2999 today?"
+```
+
+and
+
+```text
+"Dental Check Up searches have reached 190 locally.
+Want me to push your ₹2999 check-up offer?"
+```
+
+are different strings but communicate essentially the same strong decision.
+
+---
+
+# 25. Why deterministic behavior matters
+
+The screenshot specifically says:
+
+> "Your output should stay deterministic for the same input and simulator settings."
+
+This is important.
+
+Suppose judge sends:
+
+```text
+Input A
+```
+
+If you run your model five times and get:
+
+```text
+A
+B
+C
+D
+E
+```
+
+your results can become inconsistent.
+
+You ideally want:
+
+```text
+Input A
+   ↓
+same state
+   ↓
+same decision
+   ↓
+same output
+```
+
+If you use an LLM, you should therefore control things such as:
+
+```text
+temperature = 0
+```
+
+where supported, and preferably structure your decision logic so the core decision is deterministic.
+
+---
+
+# 26. Should you use an LLM?
+
+You **can**, but don't make the entire architecture:
+
+```text
+JSON → LLM → everything
+```
+
+A better architecture would be:
+
+```text
+               INPUT CONTEXT
+                    ↓
+            Context validation
+                    ↓
+            Signal extraction
+                    ↓
+           Decision/rule engine
+                    ↓
+          Select ONE best action
+                    ↓
+             Message composer
+                    ↓
+          Structured JSON output
+```
+
+The LLM can help with wording, classification, or nuanced category behavior, but your **decision logic should remain controlled**.
+
+This is particularly useful because their scoring emphasizes **decision quality**, not fancy prose.
+
+---
+
+# 27. A very good architecture for this challenge
+
+I'd structure your backend something like:
+
+```text
+FastAPI / Flask
+      |
+      +── /v1/health
+      |
+      +── /v1/metadata
+      |
+      +── /v1/context
+      |
+      +── /v1/tick
+      |
+      +── /v1/reply
+              |
+              ↓
+        Context Manager
+              |
+              ↓
+       Trigger Analyzer
+              |
+              ↓
+       Signal Ranking
+              |
+              ↓
+       Category Strategy
+              |
+              ↓
+       Message Composer
+              |
+              ↓
+       Response Validator
+```
+
+---
+
+# 28. Signal ranking is probably where you can gain a lot
+
+Suppose merchant data contains:
+
+```text
+Search spike
+Sales dip
+New offer
+Festival
+Customer history
+```
+
+You could internally assign priority.
+
+For example:
+
+```text
+Urgent trigger      → high priority
+Large performance change → high priority
+Expiring offer      → high priority
+Strong customer intent → high priority
+Minor metric change → lower priority
+```
+
+Then select:
+
+```text
+ONE strongest signal
+```
+
+instead of mentioning everything.
+
+This matches their judging guidance.
+
+---
+
+# 29. Your message should follow a simple formula
+
+A very useful pattern is:
+
+```text
+REAL SIGNAL
++
+REAL BUSINESS CONTEXT
++
+RELEVANT OFFER/ACTION
++
+ONE CTA
+```
+
+Example:
+
+```text
+190 people nearby searched for "Dental Check Up".
+Your ₹2999 check-up is live. Should I promote it
+to those users?
+```
+
+Breaking it down:
+
+```text
+190
+↓
+real signal
+
+Dental Check Up
+↓
+specific intent
+
+₹2999
+↓
+real offer
+
+Should I promote it?
+↓
+single CTA
+```
+
+That is almost exactly the behavior they're teaching you with the high-compulsion example.
+
+---
+
+# 30. What is a suppression key?
+
+The required output apparently includes:
+
+```text
+suppression key
+```
+
+This is useful so Vera doesn't repeatedly send essentially the same message.
+
+For example:
+
+```text
+"dental_search_spike_offer_2999"
+```
+
+Suppose the same event remains active for five ticks.
+
+You shouldn't spam:
+
+```text
+"190 people are searching..."
+"190 people are searching..."
+"190 people are searching..."
+```
+
+The suppression key can help your system identify:
+
+> "I've already sent this type of message for this event."
+
+The exact suppression behavior should follow the challenge specification in the package.
+
+---
+
+# 31. What is "send-as identity"?
+
+The required output apparently includes:
+
+```text
+send-as identity
+```
+
+That means the system needs to specify **who the message should appear to come from**.
+
+For example:
+
+```json
+{
+    "send_as": "Vera"
+}
+```
+
+The exact allowed format/value should be taken from the test contract.
+
+---
+
+# 32. What is the rationale?
+
+This is basically:
+
+> Why did your engine choose this message/action?
+
+Example:
+
+```text
+"Local dental-checkup searches increased sharply,
+and the merchant currently has an active ₹2999
+check-up offer."
+```
+
+This is useful for debugging and judge evaluation.
+
+---
+
+# 33. Why they mention "one clear CTA per send"
+
+This is another big rule.
+
+Bad:
+
+```text
+Should I run the campaign?
+Should I update the listing?
+Should I change the price?
+Should I message customers?
+```
+
+That's four decisions.
+
+Better:
+
+```text
+190 local searches are targeting Dental Check Up.
+Should I promote your ₹2999 offer?
+```
+
+One message.
+
+One action.
+
+One decision.
+
+---
+
+# 34. What "bold high-compulsion messaging" means
+
+It doesn't mean:
+
+```text
+🔥🔥 AMAZING OFFER!!! BUY NOW!!! 🔥🔥
+```
+
+They explicitly say that bold does **not** mean hype.
+
+It means:
+
+```text
+strong factual hook
++
+timing
++
+specific action
+```
+
+For example:
+
+```text
+"190 people nearby are searching for Dental Check Up.
+Should I send them your ₹2999 offer?"
+```
+
+The **190** is the hook.
+
+---
+
+# 35. What "generic messages lose" means
+
+Imagine your program outputs this for every business:
+
+```text
+"Your business has an opportunity to increase sales.
+Would you like to run a campaign?"
+```
+
+Technically it's a valid message.
+
+But the judge will see:
+
+```text
+No merchant context
+No trigger
+No category
+No numbers
+No reason to act now
+```
+
+So it gets penalized.
+
+---
+
+# 36. What you actually submit
+
+According to the screenshots:
+
+### 1. A public bot URL
+
+Something like:
+
+```text
+https://your-project.onrender.com
+```
+
+or:
+
+```text
+https://your-api.example.com
+```
+
+The judge must be able to reach it.
+
+### 2. README.md
+
+A **one-page README** can explain:
+
+- your approach
+- model choice
+- architecture
+- tradeoffs
+
+You don't need a huge documentation project.
+
+---
+
+# 37. Deployment is therefore part of the assessment
+
+You can't simply submit:
+
+```text
+localhost:8000
+```
+
+because their evaluator needs to access your service.
+
+You need something like:
+
+```text
+Internet
+   ↓
+Public URL
+   ↓
+Your deployed backend
+   ↓
+Database/state
+   ↓
+Message engine
+```
+
+Possible deployment platforms could include things such as Render, Railway, Fly.io, AWS, etc., depending on what you're comfortable with.
+
+---
+
+# 38. The assessment in one complete example
+
+Let's say judge sends:
+
+```text
+Category:
+Dentist
+
+Merchant:
+Smile Dental
+
+Offer:
+Dental Check Up ₹2999
+
+Trigger:
+Local search spike
+
+Performance:
+190 searches
+```
+
+### Step 1 — `/v1/context`
+
+Judge sends the merchant data.
+
+Your server stores:
+
+```text
+Smile Dental
+version 3
+190 searches
+₹2999 offer
+```
+
+---
+
+### Step 2 — `/v1/tick`
+
+Judge advances the simulation.
+
+Your engine analyzes:
+
+```text
+Trigger = search spike
+Searches = 190
+Offer = ₹2999
+Category = Dentist
+```
+
+---
+
+### Step 3 — Your decision engine
+
+It chooses:
+
+```text
+Best signal = local search spike
+```
+
+instead of talking about irrelevant data.
+
+---
+
+### Step 4 — Message composer
+
+Generates:
+
+```text
+"190 people nearby are searching for
+'Dental Check Up'. Should I promote your
+₹2999 check-up offer?"
+```
+
+---
+
+### Step 5 — Judge scores it
+
+Potential dimensions:
+
+```text
+Decision Quality        → Was search spike the right signal?
+Specificity             → Did it use 190 and ₹2999?
+Category Fit            → Does it fit a dentist?
+Merchant Fit            → Does it use Smile Dental's actual context?
+Engagement              → Is there an easy reason to reply?
+```
+
+Each gets:
+
+```text
+0–10
+```
+
+---
+
+# 39. Then they make the test harder
+
+This is where the challenge gets interesting.
+
+The screenshot says:
+
+> "Judges inject fresh facts after submission to test adaptability and grounding."
+
+So you might initially receive:
+
+```text
+Searches = 190
+Offer = ₹2999
+```
+
+Then later:
+
+```text
+Searches = 40
+Offer = ₹2499
+```
+
+Your bot must adapt.
+
+It can't keep blindly saying:
+
+```text
+"190 people are searching..."
+```
+
+because that is now outdated.
+
+This is why **state management + versioning + grounding** matter.
+
+---
+
+# 40. They also replay conversation scenarios
+
+The submission flow says strong entries are:
+
+> "replay-tested on replies, objections, auto-replies, and intent handoffs."
+
+So your system may encounter something like:
+
+```text
+Vera:
+190 people are searching...
+Should I promote the ₹2999 offer?
+
+Merchant:
+No, don't promote it.
+```
+
+Your system should respond appropriately.
+
+Not:
+
+```text
+Great! I'll promote it.
+```
+
+Instead it should understand the new conversational state.
+
+---
+
+# 41. So what will actually determine your score?
+
+Think of the whole thing as:
+
+```text
+                 100% QUALITY
+                       |
+       ┌───────────────┼────────────────┐
+       ↓               ↓                ↓
+   RIGHT DECISION   REAL FACTS      GOOD MESSAGE
+       ↓               ↓                ↓
+ Decision Quality   Specificity    Engagement
+                                      |
+                              Category + Merchant Fit
+```
+
+It is **not primarily**:
+
+```text
+Which model is smartest?
+```
+
+It is much more:
+
+```text
+Can your system consistently choose
+the right action from structured context?
+```
+
+---
+
+# 42. What I would build
+
+For a college-level implementation, I would keep it relatively simple:
+
+```text
+FastAPI
++
+SQLite/PostgreSQL
++
+Python
++
+LLM API (optional)
+```
+
+### Backend
+
+```text
+FastAPI
+```
+
+### State
+
+```text
+PostgreSQL
+```
+
+or SQLite for simplicity if the deployment supports it reliably.
+
+### Core engine
+
+```text
+Python rule/scoring engine
+```
+
+### LLM
+
+Use it primarily for:
+
+```text
+message phrasing
+category-aware wording
+rationale
+handling nuanced replies
+```
+
+rather than letting it freely decide everything.
+
+---
+
+# 43. Your internal decision engine could look like this
+
+For every incoming context:
+
+```text
+1. Read category
+2. Read merchant state
+3. Read trigger
+4. Read customer if present
+5. Extract candidate signals
+6. Score each signal
+7. Pick ONE highest-priority signal
+8. Select appropriate action
+9. Build message
+10. Attach CTA
+11. Generate suppression key
+12. Generate rationale
+13. Validate output
+14. Return JSON
+```
+
+That is the actual **message engine** they're asking for.
+
+---
+
+# 44. The full challenge journey
+
+The screenshots basically boil everything down to these 4 steps:
+
+```text
+STEP 1
+Download challenge package
+        ↓
+Read dataset + API contract + examples
+
+STEP 2
+Build message engine
+        ↓
+Implement required APIs
+        ↓
+Test locally
+
+STEP 3
+Deploy publicly
+        ↓
+Get public URL
+        ↓
+Verify judge can access it
+
+STEP 4
+Submit URL + README
+        ↓
+Their judge runs tests
+        ↓
+Your bot receives contexts
+        ↓
+Your bot generates messages
+        ↓
+AI judge scores them
+```
+
+---
+
+# 45. In one sentence
+
+**You are building a publicly accessible stateful API that receives merchant/customer/event context, decides the single most relevant next communication for Vera, returns that decision/message in the required format, and is then automatically tested and AI-scored on decision quality, specificity, category fit, merchant fit, and likelihood of getting a response.**
+
+The **first thing I'd do after downloading the ZIP** is read these three files in this order:
+
+```text
+challenge-brief.md
+        ↓
+challenge-testing-brief.md
+        ↓
+api-call-examples.md
+```
+
+Those will tell you the **exact JSON request/response contract**, which is more important than guessing from the screenshots.
+
+USER:
+i dont get it
+
+ASSISTANT:
+Okay bro, forget all the complicated terms. Let me explain it **like a normal coding question**.
+
+## Imagine the assessment does this
+
+They have a program called the **Judge**.
+
+Your job is to make another program called **Your Bot**.
+
+```text
+THEIR JUDGE  ────────>  YOUR BOT  ────────>  MESSAGE
+```
+
+Your Bot is basically a **backend/API**.
+
+---
+
+## Example
+
+Their Judge has this information:
+
+```text
+Business: Smile Dental Clinic
+
+Category: Dentist
+
+People searching for:
+"Dental Check Up" → 190 people
+
+Current offer:
+Dental Check Up → ₹2999
+```
+
+The Judge sends this information to **your API**.
+
+Something like:
+
+```http
+POST /v1/context
+```
+
+with JSON containing the above data.
+
+---
+
+## Your program receives it
+
+Your program reads:
+
+```text
+Category = Dentist
+Searches = 190
+Offer = ₹2999
+```
+
+Then **your code decides what Vera should say**.
+
+Your code might produce:
+
+```text
+190 people nearby are searching for
+"Dental Check Up". Should I promote your
+₹2999 check-up offer?
+```
+
+That's it.
+
+---
+
+# So what are YOU actually making?
+
+You're making this:
+
+```text
+                 YOUR SERVER
+                    |
+                    ↓
+      ┌─────────────────────────┐
+      │ Receive business data   │
+      │                         │
+      │ Decide what matters     │
+      │                         │
+      │ Create message          │
+      └─────────────────────────┘
+                    |
+                    ↓
+             Return JSON
+```
+
+For example:
+
+```json
+{
+  "message": "190 people nearby are searching for Dental Check Up. Should I promote your ₹2999 check-up offer?",
+  "cta": "Promote offer",
+  "rationale": "There is strong local demand and an active offer."
+}
+```
+
+---
+
+# Then WHO checks your answer?
+
+**Their Judge does.**
+
+The flow is:
+
+```text
+1. Judge sends data
+          ↓
+2. Your API receives data
+          ↓
+3. Your code decides message
+          ↓
+4. Your API sends message back
+          ↓
+5. Judge evaluates your message
+```
+
+So you are **not answering questions manually**.
+
+You're building a program that answers them automatically.
+
+---
+
+# Think of it like LeetCode
+
+On LeetCode:
+
+```text
+Input
+ ↓
+Your function
+ ↓
+Output
+```
+
+Here it's almost the same:
+
+```text
+Their JSON input
+       ↓
+   Your API
+       ↓
+Your JSON output
+```
+
+The major difference is that instead of returning:
+
+```text
+42
+```
+
+you're returning something like:
+
+```text
+"190 people nearby are searching..."
+```
+
+---
+
+# Why do they call it an "AI assessment"?
+
+Because your program is supposed to make a **smart decision**.
+
+Suppose they give you:
+
+```text
+Sales dropped 5%
+Searches increased 80%
+Offer expires tomorrow
+Festival tomorrow
+```
+
+Your bot has to decide:
+
+> Which ONE of these should Vera talk about?
+
+Maybe it chooses:
+
+```text
+Searches increased 80%
+```
+
+and sends:
+
+```text
+Searches for your service are up 80% locally.
+Want me to promote your ₹2999 offer?
+```
+
+The Judge then asks:
+
+> Was that a good decision?
+
+---
+
+# VERY IMPORTANT: You don't need to build Vera itself
+
+You are **not** building:
+
+❌ ChatGPT  
+❌ WhatsApp  
+❌ A frontend  
+❌ A full merchant app  
+
+You're building:
+
+✅ **A backend message-decision API**
+
+---
+
+# The simplest possible picture
+
+```text
+              THEIR SYSTEM
+                   |
+                   | business data
+                   ↓
+          ┌──────────────────┐
+          │    YOUR BOT      │
+          │                  │
+          │ "What matters?"  │
+          │        ↓         │
+          │ "What should    │
+          │  Vera say?"      │
+          └────────┬─────────┘
+                   |
+                   | message
+                   ↓
+              THEIR JUDGE
+                   |
+                   ↓
+            SCORE YOUR BOT
+```
+
+And **this is why they ask for a public URL**.
+
+For example, you deploy your backend at:
+
+```text
+https://my-vera-bot.onrender.com
+```
+
+Then their Judge can do:
+
+```text
+POST https://my-vera-bot.onrender.com/v1/context
+```
+
+and your server responds.
+
+---
+
+## One thing to understand next
+
+The **exact JSON they send you and the exact JSON you're required to return** are defined in the challenge ZIP.
+
+That's the part we should look at next, because once you see one real `/v1/context` request and `/v1/tick` → `/v1/reply` flow, this whole assessment will become much clearer.
+
+USER:
+what is vera ? im building it ?
+
+ASSISTANT:
+Yes — **but only partially**.
+
+### What is Vera?
+
+**Vera is the fictional/product AI assistant described in the assessment.**
+
+The assessment says Vera is magicpin's AI assistant for merchants. Think of Vera as:
+
+```text
+Merchant
+   ↓
+"Something happened with my business"
+   ↓
+Vera
+   ↓
+"Here's what we should do next"
+```
+
+For example, a merchant has a dental clinic and suddenly 190 people nearby search for "Dental Check Up."
+
+Vera might say:
+
+> "190 people nearby are searching for 'Dental Check Up'. Should I promote your ₹2999 check-up offer?"
+
+---
+
+### Are YOU building Vera?
+
+**You are building the backend/message engine that powers Vera.**
+
+You're **not necessarily building the entire Vera product**.
+
+Think of it like this:
+
+```text
+                 VERA
+                  |
+        ┌─────────┴─────────┐
+        │                   │
+   User Interface      YOUR PART
+   (already assumed)    Message Engine
+                           |
+                           ↓
+                    Decide what to say
+                           |
+                           ↓
+                    Generate response
+```
+
+So the challenge is essentially saying:
+
+> **"Build the brain that decides what Vera should message a merchant."**
+
+---
+
+### Your job
+
+You give them a public API:
+
+```text
+https://your-bot.com
+```
+
+Their testing system sends:
+
+```text
+Merchant information
++
+Trigger/event
++
+Customer information (sometimes)
+```
+
+to your API.
+
+Your API decides:
+
+```text
+"What should Vera say right now?"
+```
+
+and returns the message.
+
+---
+
+### Very simple analogy
+
+Imagine **Vera = a salesperson**.
+
+The assessment doesn't ask you to build the entire company or the salesperson's website.
+
+It asks you to build the **salesperson's decision-making system**:
+
+```text
+Here's the situation
+        ↓
+What matters most?
+        ↓
+What should I say?
+        ↓
+What should I ask them to do?
+```
+
+That's what you're submitting.
+
+**So yes: you're building the "brain/message engine behind Vera", not the whole Vera application.**
+
+USER:
+decide what to say means im building an llm
+
+ASSISTANT:
+No bro — **you are NOT building an LLM from scratch.**
+
+Think of it like this:
+
+### An LLM is already available
+
+For example, you could use:
+
+```text
+OpenAI API
+Gemini API
+Claude API
+Groq API
+```
+
+You send it information and it generates text.
+
+Your challenge is to build the **application/logic around the model** that decides what message to generate.
+
+---
+
+### The difference
+
+An **LLM** is:
+
+```text
+Input:
+"190 people searched for dental checkup"
+
+        ↓
+
+       LLM
+
+        ↓
+
+"190 people nearby are searching for
+Dental Check Up. Should I promote your
+₹2999 offer?"
+```
+
+But your **Vera message engine** is more like:
+
+```text
+Merchant data
+     +
+Trigger
+     +
+Category
+     +
+Customer data
+       ↓
+YOUR APPLICATION
+       ↓
+"What is the important thing happening?"
+       ↓
+"What action should Vera suggest?"
+       ↓
+Use LLM if needed to phrase it
+       ↓
+Final message
+```
+
+---
+
+### You can therefore use an existing LLM
+
+For example:
+
+```text
+                  YOUR SERVER
+                      ↓
+              Receive JSON
+                      ↓
+             Analyze context
+                      ↓
+          Choose important signal
+                      ↓
+             Ask Gemini/GPT
+             to phrase message
+                      ↓
+             Return JSON
+```
+
+You are **not training GPT**.
+
+You are **not creating a neural network**.
+
+You are **not building ChatGPT**.
+
+---
+
+### Why does the assessment call it an "AI" challenge then?
+
+Because they care about the **decision your system makes**.
+
+Suppose they give you:
+
+```text
+Searches: +80%
+Sales: -5%
+Offer: ₹2999
+Offer expires: tomorrow
+Category: Dentist
+```
+
+Your system has to determine:
+
+```text
+Which event should Vera care about?
+```
+
+Then produce something like:
+
+```text
+"Searches for Dental Check Up are up 80%.
+Your ₹2999 offer expires tomorrow.
+Should I promote it today?"
+```
+
+The LLM can help write that sentence, but **your system's intelligence/logic is what they are evaluating**.
+
+---
+
+### The easiest analogy
+
+You are **not building the brain (LLM)**.
+
+You're building the **Vera application that uses a brain**.
+
+```text
+LLM = brain
+Your code = decision system + API + memory + rules
+Vera = product/persona using all of it
+```
+
+And importantly, from the screenshots, **their judge is itself LLM-powered**. Your submission gets sent situations and the judge evaluates whether your resulting decisions/messages are good.
+
+So for this assessment, I'd think:
+
+> **"I'm building an API-based AI agent/message engine using an existing LLM, not building an LLM."**
+
+USER:
+can you explain me the endpoints i have to make and why i have to make them ?
+
+ASSISTANT:
+Yes. This is the part that makes the whole assessment much easier to understand.
+
+You have to make **5 API endpoints**:
+
+```text
+POST /v1/context
+POST /v1/tick
+POST /v1/reply
+
+GET  /v1/health
+GET  /v1/metadata
+```
+
+Think of them as **5 doors into your backend**. The evaluator uses different doors for different purposes.
+
+---
+
+# First: what is an endpoint?
+
+An endpoint is simply a URL in your backend.
+
+For example:
+
+```text
+https://yourbot.com/v1/health
+```
+
+When the evaluator sends:
+
+```http
+GET /v1/health
+```
+
+your server has code that says:
+
+```text
+"Oh, they are asking whether I'm alive."
+```
+
+and returns a response.
+
+---
+
+# 1. `GET /v1/health`
+
+### What is it for?
+
+To check:
+
+> **"Is your server running?"**
+
+Imagine the evaluator wants to test your bot.
+
+Before doing anything, it can call:
+
+```http
+GET /v1/health
+```
+
+Your server responds something like:
+
+```json
+{
+  "status": "ok"
+}
+```
+
+So the flow is:
+
+```text
+Judge
+  |
+  | GET /v1/health
+  ↓
+Your server
+  |
+  | "I'm running"
+  ↓
+Judge
+```
+
+### Why do they need this?
+
+Because your bot is hosted somewhere on the internet.
+
+They need an easy way to check:
+
+```text
+Is the server alive?
+Can I reach it?
+```
+
+This endpoint has **nothing to do with generating messages**.
+
+It's basically a heartbeat.
+
+---
+
+# 2. `GET /v1/metadata`
+
+This is basically:
+
+> **"Tell me information about your bot."**
+
+The evaluator can call:
+
+```http
+GET /v1/metadata
+```
+
+and your server returns whatever the challenge contract requires.
+
+For example, conceptually:
+
+```json
+{
+  "name": "My Vera Engine",
+  "version": "1.0.0"
+}
+```
+
+The **exact JSON** should come from the starter package.
+
+### Why?
+
+The evaluator may need information about:
+
+- your bot
+- version
+- supported API version
+- capabilities/configuration
+
+Again, this is **not where the actual message generation happens**.
+
+---
+
+# 3. `POST /v1/context`
+
+### THIS is one of the important ones.
+
+This means:
+
+> **"Here is information about the merchant. Remember it."**
+
+The screenshot gives an example like:
+
+```http
+POST /v1/context
+```
+
+with:
+
+```json
+{
+  "scope": "merchant",
+  "context_id": "m_001_acme",
+  "version": 3,
+  "payload": {
+    "identity": {},
+    "performance": {},
+    "offers": []
+  }
+}
+```
+
+So their evaluator is basically saying:
+
+```text
+Hey bot,
+here's the current information about this merchant.
+```
+
+Your server receives it and **stores it**.
+
+For example:
+
+```text
+Merchant ID: m_001_acme
+Version: 3
+
+Performance:
+190 searches
+
+Offer:
+Dental Check-up ₹2999
+```
+
+You might store that in:
+
+```text
+SQLite
+PostgreSQL
+Redis
+etc.
+```
+
+---
+
+## Why do you need `/context`?
+
+Because the evaluator does **not want to send all merchant information every single time**.
+
+Instead:
+
+```text
+/v1/context
+     ↓
+Store merchant information
+     ↓
+Later...
+/v1/tick
+/v1/reply
+     ↓
+Use the stored information
+```
+
+That's what makes your bot **stateful**.
+
+---
+
+# 4. `POST /v1/tick`
+
+This one is easier to understand if you think of a **simulation**.
+
+`tick` basically means:
+
+> **"Time/event has moved forward. Here's the next point in the simulation."**
+
+The evaluator can use it to test whether your bot reacts to changing situations.
+
+Imagine initially:
+
+```text
+Searches = 190
+Offer = ₹2999
+```
+
+Your bot has that stored.
+
+Then the simulator moves forward.
+
+```text
+TICK
+```
+
+Now maybe new information becomes relevant.
+
+For example:
+
+```text
+Searches increased
+Offer changed
+Festival is approaching
+Sales dropped
+```
+
+Your bot needs to process the current state and decide what should happen next.
+
+---
+
+### Why do they need `/tick`?
+
+Because they don't want to test your bot with only **one static situation**.
+
+They want to test:
+
+```text
+Time 1
+ ↓
+Your bot makes decision
+
+Time 2
+ ↓
+New information
+ ↓
+Your bot adapts
+
+Time 3
+ ↓
+Another event
+ ↓
+Your bot adapts again
+```
+
+That is what the screenshot means when it talks about:
+
+> "Judges inject fresh facts after submission to test adaptability and grounding."
+
+---
+
+# 5. `POST /v1/reply`
+
+This one is for **conversation**.
+
+Suppose your bot says:
+
+> "190 people nearby are searching for Dental Check Up. Should I promote your ₹2999 offer?"
+
+Now the merchant responds:
+
+> "Yes."
+
+Or:
+
+> "No."
+
+Or:
+
+> "Can you make the offer cheaper?"
+
+The evaluator sends that conversational response to:
+
+```http
+POST /v1/reply
+```
+
+Your bot then needs to understand the new state of the conversation.
+
+---
+
+## Example
+
+Initially:
+
+```text
+Merchant context
+     ↓
+Your bot
+
+"190 people nearby are searching for
+Dental Check Up. Should I promote
+your ₹2999 offer?"
+```
+
+Then:
+
+```text
+Merchant:
+"Yes, do it."
+```
+
+The evaluator sends that to:
+
+```text
+POST /v1/reply
+```
+
+Your system can then respond appropriately.
+
+---
+
+# So why BOTH `/tick` and `/reply`?
+
+Because they test **different things**.
+
+### `/tick`
+
+Represents:
+
+> **Something changed in the environment / simulation.**
+
+```text
+New event
+New metric
+New trigger
+New context
+```
+
+### `/reply`
+
+Represents:
+
+> **Someone responded to your message.**
+
+```text
+Yes
+No
+Question
+Objection
+Request
+```
+
+So:
+
+```text
+TICK  = world/context changed
+
+REPLY = person responded
+```
+
+That's the basic idea.
+
+---
+
+# Now put all 5 together
+
+Here's the easiest picture:
+
+```text
+                 THEIR JUDGE
+                     |
+          ┌──────────┼──────────┐
+          ↓          ↓          ↓
+       /health    /metadata   /context
+                                |
+                                ↓
+                         Store merchant data
+                                |
+                                ↓
+                              /tick
+                                |
+                                ↓
+                     Decide what Vera should say
+                                |
+                                ↓
+                            /reply
+                                |
+                                ↓
+                       Merchant responds
+                                |
+                                ↓
+                     Your bot responds again
+```
+
+---
+
+# The important part
+
+You might currently be thinking:
+
+> "Why can't they just give me the data and ask me to return a message?"
+
+They **could**, but this challenge is specifically testing whether you can build a **real stateful service**, not just:
+
+```text
+JSON → Gemini → text
+```
+
+They want to test:
+
+```text
+Can your application
+   ↓
+store context
+   ↓
+understand changing events
+   ↓
+remember conversation
+   ↓
+make decisions
+   ↓
+generate appropriate messages
+```
+
+---
+
+# What each endpoint means in one line
+
+| Endpoint | Meaning |
+|---|---|
+| `GET /v1/health` | **Are you alive?** |
+| `GET /v1/metadata` | **Tell me about your bot.** |
+| `POST /v1/context` | **Here is merchant/customer context; remember it.** |
+| `POST /v1/tick` | **The simulation/environment moved forward; react to the current state.** |
+| `POST /v1/reply` | **The merchant/customer replied; continue the conversation.** |
+
+The **exact request JSON and exact response JSON** for these endpoints are defined by the challenge package. That's the part you should implement exactly rather than inventing your own format.
+
+The next thing I'd focus on is **`/v1/context → /v1/tick → /v1/reply` with an actual JSON example**, because that's the core 80% of the assessment.
